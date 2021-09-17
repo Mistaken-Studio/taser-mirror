@@ -4,9 +4,14 @@
 // </copyright>
 // -----------------------------------------------------------------------
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using Exiled.API.Features;
+using Exiled.API.Features.Items;
+using Exiled.CustomItems.API.Features;
 using Interactables.Interobjects.DoorUtils;
+using InventorySystem.Items.Pickups;
 using Mistaken.API;
 using Mistaken.API.Diagnostics;
 using Mistaken.API.Extensions;
@@ -15,32 +20,14 @@ using UnityEngine;
 namespace Mistaken.Taser
 {
     /// <inheritdoc/>
-    public partial class TaserHandler : Module
+    public class TaserHandler : Module
     {
-        /// <summary>
-        /// Spawns taser in the specified <paramref name="position"/> and returns spawned taser.
-        /// </summary>
-        /// <param name="position">Position where taser will be spawned.</param>
-        /// <returns>Spawned taser as <see cref="Pickup"/>.</returns>
-        public static Pickup SpawnTaser(Vector3 position)
-        {
-            float dur = 501000f + (index++);
-            return MapPlus.Spawn(
-                new Inventory.SyncItemInfo
-                {
-                    durability = dur,
-                    id = ItemType.GunUSP,
-                }, position,
-                Quaternion.identity,
-                Size);
-        }
-
         /// <inheritdoc cref="Module.Module(Exiled.API.Interfaces.IPlugin{Exiled.API.Interfaces.IConfig})"/>
         public TaserHandler(PluginHandler p)
             : base(p)
         {
             Instance = this;
-            new TaserItem();
+            new TaserItem().TryRegister();
         }
 
         /// <inheritdoc/>
@@ -60,7 +47,8 @@ namespace Mistaken.Taser
             Exiled.Events.Handlers.Player.ChangingRole -= this.Handle<Exiled.Events.EventArgs.ChangingRoleEventArgs>((ev) => this.Player_ChangingRole(ev));
         }
 
-        internal static readonly Vector3 Size = new Vector3(.75f, .75f, .75f);
+        internal static readonly Dictionary<GameObject, Door> Doors = new Dictionary<GameObject, Door>();
+
         internal static readonly HashSet<ItemType> UsableItems = new HashSet<ItemType>()
         {
             ItemType.MicroHID,
@@ -70,57 +58,48 @@ namespace Mistaken.Taser
             ItemType.SCP207,
             ItemType.SCP268,
             ItemType.SCP500,
-            ItemType.GrenadeFrag,
+            ItemType.GrenadeHE,
             ItemType.GrenadeFlash,
             ItemType.Adrenaline,
         };
 
-        private static int index = 1;
-
-        private static TaserHandler Instance { get; set; }
+        internal static TaserHandler Instance { get; set; }
 
         private void Server_RoundStarted()
         {
-            index = 1;
-            var initOne = SpawnTaser(Vector3.zero);
-            this.CallDelayed(5, () => initOne.Delete(), "RoundStarted");
-            var lockers = LockerManager.singleton.lockers.Where(i => i.chambers.Length == 9).ToArray();
+            foreach (var door in Map.Doors)
+            {
+                Doors[door.Base.gameObject] = door;
+            }
+
+            var structureLockers = UnityEngine.Object.FindObjectsOfType<MapGeneration.Distributors.SpawnableStructure>().Where(x => x.StructureType == MapGeneration.Distributors.StructureType.LargeGunLocker);
+            var lockers = structureLockers.Select(x => x as MapGeneration.Distributors.Locker).Where(x => x.Chambers.Length > 8).ToArray();
+            var locker = lockers[UnityEngine.Random.Range(0, lockers.Length)];
             int toSpawn = 1;
             while (toSpawn > 0)
             {
-                var locker = lockers[UnityEngine.Random.Range(0, lockers.Length)];
-                locker.AssignPickup(SpawnTaser(locker.chambers[UnityEngine.Random.Range(0, locker.chambers.Length)].spawnpoint.position));
+                var chamber = locker.Chambers[UnityEngine.Random.Range(0, locker.Chambers.Length)];
+                CustomWeapon.TrySpawn(1, chamber._spawnpoint.position + (Vector3.up / 10), out Pickup pickup);
+                chamber._content.Add(pickup.Base);
                 toSpawn--;
             }
         }
 
         private void Player_ChangingRole(Exiled.Events.EventArgs.ChangingRoleEventArgs ev)
         {
-            if (ev.IsEscaped)
-                return;
             if (ev.Player.GetSessionVar<bool>(SessionVarType.ITEM_LESS_CLSSS_CHANGE))
                 return;
-            float dur = 501000f + (index++);
             if (ev.NewRole == RoleType.FacilityGuard)
             {
-                ev.Items.Remove(ItemType.GunUSP);
+                ev.Items.Remove(ItemType.GunCOM18);
                 this.CallDelayed(
                     .25f,
                     () =>
                     {
-                        if (ev.Player.Inventory.items.Count >= 8)
-                        {
-                            MapPlus.Spawn(
-                                new Inventory.SyncItemInfo
-                                {
-                                    durability = dur,
-                                    id = ItemType.GunUSP,
-                                }, ev.Player.Position,
-                                Quaternion.identity,
-                                Size);
-                        }
+                        if (ev.Player.Items.Count >= 8)
+                            CustomWeapon.TrySpawn(1, ev.Player.Position, out Pickup pickup);
                         else
-                            ev.Player.Inventory.AddNewItem(ItemType.GunUSP, dur);
+                            CustomWeapon.TryGive(ev.Player, 1);
                     },
                     "ChangingRole");
             }

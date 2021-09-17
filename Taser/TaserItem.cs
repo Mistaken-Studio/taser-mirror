@@ -6,63 +6,33 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Exiled.API.Enums;
 using Exiled.API.Features;
+using Exiled.API.Features.Items;
+using Exiled.CustomItems.API.Features;
+using Exiled.CustomItems.API.Spawn;
+using InventorySystem.Items.Firearms;
 using MEC;
 using Mistaken.API;
 using Mistaken.API.Extensions;
 using Mistaken.API.GUI;
-using Mistaken.CustomItems;
 using Mistaken.RoundLogger;
 using UnityEngine;
 
 namespace Mistaken.Taser
 {
-    public partial class TaserHandler
+    /// <summary>
+    /// Com18 that applies some effects on target.
+    /// </summary>
+    public class TaserItem : CustomWeapon
     {
-        /// <summary>
-        /// USP that applies some effects on target.
-        /// </summary>
-        public class TaserItem : CustomItem
+        /*/// <inheritdoc/>
+        public override SessionVarType SessionVarType => SessionVarType.CI_TASER;
+
+        /// <inheritdoc/>
+        public override Upgrade[] Upgrades => new Upgrade[]
         {
-            /// <summary>
-            /// Gives Taser to <paramref name="player"/>.
-            /// </summary>
-            /// <param name="player">Player to give taser to.</param>
-            public static void Give(Player player)
-            {
-                if (player.Inventory.items.Count < 8)
-                {
-                    float dur = 501000 + (index++);
-                    player.AddItem(new Inventory.SyncItemInfo
-                    {
-                        durability = dur,
-                        id = ItemType.GunUSP,
-                    });
-                    player.SetSessionVar(SessionVarType.CI_TASER, true);
-                }
-            }
-
-            /// <inheritdoc cref="CustomItem.CustomItem"/>
-            public TaserItem() => this.Register();
-
-            /// <inheritdoc/>
-            public override string ItemName => "Taser";
-
-            /// <inheritdoc/>
-            public override ItemType Item => ItemType.GunUSP;
-
-            /// <inheritdoc/>
-            public override SessionVarType SessionVarType => SessionVarType.CI_TASER;
-
-            /// <inheritdoc/>
-            public override int Durability => 501;
-
-            /// <inheritdoc/>
-            public override Vector3 Size => TaserHandler.Size;
-
-            /// <inheritdoc/>
-            public override Upgrade[] Upgrades => new Upgrade[]
-            {
                 new Upgrade
                 {
                     Chance = 100,
@@ -70,161 +40,176 @@ namespace Mistaken.Taser
                     Input = ItemType.GunUSP,
                     KnobSetting = Scp914.Scp914Knob.OneToOne,
                 },
-            };
+        };*/
 
-            /// <inheritdoc/>
-            public override void OnStartHolding(Player player, Inventory.SyncItemInfo item)
+        /// <inheritdoc/>
+        public override uint Id { get; set; } = 1;
+
+        /// <inheritdoc/>
+        public override string Name { get; set; } = "Taser";
+
+        /// <inheritdoc/>
+        public override string Description { get; set; } = "A Taser";
+
+        /// <inheritdoc/>
+        public override ItemType Type { get; set; } = ItemType.GunCOM18;
+
+        /// <inheritdoc/>
+        public override float Weight { get; set; } = 0.1f;
+
+        /// <inheritdoc/>
+        public override SpawnProperties SpawnProperties { get; set; }
+
+        /// <inheritdoc/>
+        public override Modifiers Modifiers { get; set; }
+
+        /// <inheritdoc/>
+        public override byte ClipSize { get; set; } = 1;
+
+        /// <inheritdoc/>
+        public override float Damage { get; set; } = 0;
+
+        /// <inheritdoc/>
+        public override Pickup Spawn(Vector3 position, Item item)
+        {
+            var pickup = base.Spawn(position, item);
+            pickup.Scale = Size;
+            return pickup;
+        }
+
+        /// <inheritdoc/>
+        public override Pickup Spawn(Vector3 position)
+        {
+            var pickup = base.Spawn(position);
+            pickup.Scale = Size;
+            var firearmPickup = pickup.Base as FirearmPickup;
+            firearmPickup.Status = new FirearmStatus(1, FirearmStatusFlags.Cocked, firearmPickup.Status.Attachments);
+            firearmPickup.NetworkStatus = firearmPickup.Status;
+            return pickup;
+        }
+
+        internal static readonly Vector3 Size = new Vector3(.75f, .75f, .75f);
+
+        /// <inheritdoc/>
+        protected override void ShowSelectedMessage(Player player)
+        {
+            TaserHandler.Instance.RunCoroutine(this.UpdateInterface(player), "Taser.UpdateInterface");
+        }
+
+        /// <inheritdoc/>
+        protected override void OnReloading(Exiled.Events.EventArgs.ReloadingWeaponEventArgs ev)
+        {
+            ev.IsAllowed = false;
+            base.OnReloading(ev);
+        }
+
+        /// <inheritdoc/>
+        protected override void OnShooting(Exiled.Events.EventArgs.ShootingEventArgs ev)
+        {
+            if (!this.cooldowns.TryGetValue(ev.Shooter.CurrentItem.Serial, out DateTime time))
+                this.cooldowns.Add(ev.Shooter.CurrentItem.Serial, DateTime.Now);
+            if (DateTime.Now < time)
             {
-                Instance.RunCoroutine(this.UpdateInterface(player), "Taser.UpdateInterface");
+                ev.Shooter.SetGUI("taserAmmo", PseudoGUIPosition.TOP, "You have <color=yellow>no ammo</color>", 3);
+                ev.IsAllowed = false;
             }
-
-            /// <inheritdoc/>
-            public override void Spawn(Vector3 position, float innerDurability = 0f)
+            else
             {
-                float dur = (this.Durability * 1000) + (index++);
-                MapPlus.Spawn(
-                    new Inventory.SyncItemInfo
-                    {
-                        durability = dur,
-                        id = ItemType.GunUSP,
-                    }, position,
-                    Quaternion.identity,
-                    this.Size);
-            }
-
-            /// <inheritdoc/>
-            public override bool OnReload(Player player, Inventory.SyncItemInfo item)
-            {
-                return false;
-            }
-
-            /// <inheritdoc/>
-            public override bool OnShoot(Player player, Inventory.SyncItemInfo item, GameObject target, Vector3 position)
-            {
-                int dur = (int)this.GetInternalDurability(item);
-                if (!this.cooldowns.TryGetValue(dur, out DateTime time))
-                    this.cooldowns.Add(dur, DateTime.Now);
-                if (DateTime.Now < time)
+                if (ev.Shooter.GetEffectActive<CustomPlayerEffects.Invisible>())
+                    ev.Shooter.DisableEffect<CustomPlayerEffects.Invisible>();
+                this.cooldowns[ev.Shooter.CurrentItem.Serial] = DateTime.Now.AddSeconds(PluginHandler.Instance.Config.TaserHitCooldown);
+                Player targetPlayer = (RealPlayers.List.Where(x => x.NetworkIdentity.netId == ev.TargetNetId).Count() > 0) ? RealPlayers.List.First(x => x.NetworkIdentity.netId == ev.TargetNetId) : null;
+                if (targetPlayer != null)
                 {
-                    player.SetGUI("taserAmmo", PseudoGUIPosition.TOP, "You have <color=yellow>no ammo</color>", 3);
+                    ev.Shooter.ShowHitMarker();
+                    if (targetPlayer.Items.Select(x => x.Type).Any(x => x == ItemType.ArmorLight || x == ItemType.ArmorCombat || x == ItemType.ArmorHeavy))
+                    {
+                        RLogger.Log("TASER", "BLOCKED", $"{ev.Shooter.PlayerToString()} hit {targetPlayer.PlayerToString()} but effects were blocked by an armor");
+                        return;
+                    }
+
+                    if (targetPlayer.GetSessionVar<bool>(SessionVarType.SPAWN_PROTECT))
+                    {
+                        RLogger.Log("TASER", "REVERSED", $"{ev.Shooter.PlayerToString()} hit {targetPlayer.PlayerToString()} but effects were reversed because of spawn protect");
+                        targetPlayer = ev.Shooter;
+                        return;
+                    }
+
+                    if (targetPlayer.IsHuman)
+                    {
+                        targetPlayer.EnableEffect<CustomPlayerEffects.Ensnared>(2);
+                        targetPlayer.EnableEffect<CustomPlayerEffects.Flashed>(5);
+                        targetPlayer.EnableEffect<CustomPlayerEffects.Deafened>(10);
+                        targetPlayer.EnableEffect<CustomPlayerEffects.Blinded>(10);
+                        targetPlayer.EnableEffect<CustomPlayerEffects.Amnesia>(5);
+                        if (targetPlayer.CurrentItem != null && !TaserHandler.UsableItems.Contains(targetPlayer.CurrentItem.Type))
+                        {
+                            Exiled.Events.Handlers.Player.OnDroppingItem(new Exiled.Events.EventArgs.DroppingItemEventArgs(targetPlayer, targetPlayer.CurrentItem.Base));
+                            var pickup = MapPlus.Spawn(targetPlayer.CurrentItem.Type, targetPlayer.Position, Quaternion.identity, Vector3.one);
+
+                            targetPlayer.DropItem(targetPlayer.CurrentItem);
+                            targetPlayer.RemoveItem(targetPlayer.CurrentItem);
+                            targetPlayer.CurrentItem = default;
+                        }
+
+                        RLogger.Log("TASER", "HIT", $"{ev.Shooter.PlayerToString()} hit {targetPlayer.PlayerToString()}");
+                        targetPlayer.Broadcast("<color=yellow>Taser</color>", 10, $"<color=yellow>You have been tased by: {ev.Shooter.Nickname} [{ev.Shooter.Role}]</color>");
+                        targetPlayer.SendConsoleMessage($"You have been tased by: {ev.Shooter.Nickname} [{ev.Shooter.Role}]", "yellow");
+                        return;
+                    }
                 }
                 else
                 {
-                    if (player.GetEffectActive<CustomPlayerEffects.Scp268>())
-                        player.DisableEffect<CustomPlayerEffects.Scp268>();
-                    this.cooldowns[dur] = DateTime.Now.AddSeconds(PluginHandler.Instance.Config.TaserHitCooldown);
-                    var targetPlayer = Player.Get(target);
-                    if (targetPlayer != null)
+                    var colliders = UnityEngine.Physics.OverlapSphere(ev.ShotPosition, 0.1f);
+                    if (colliders != null)
                     {
-                        player.ReferenceHub.weaponManager.RpcConfirmShot(true, player.ReferenceHub.weaponManager.curWeapon);
-                        if (targetPlayer.GetSessionVar<bool>(SessionVarType.CI_LIGHT_ARMOR) || targetPlayer.GetSessionVar<bool>(SessionVarType.CI_ARMOR) || targetPlayer.GetSessionVar<bool>(SessionVarType.CI_HEAVY_ARMOR))
+                        foreach (var item in colliders)
                         {
-                            RLogger.Log("TASER", "BLOCKED", $"{player.PlayerToString()} hit {targetPlayer.PlayerToString()} but effects were blocked by an armor");
-                            return false;
+                            if (!TaserHandler.Doors.TryGetValue(item.gameObject, out var door) || door == null)
+                                continue;
+                            door.ChangeLock(DoorLockType.NoPower);
+                            TaserHandler.Instance.CallDelayed(10, () => door.ChangeLock(DoorLockType.NoPower), "UnlockDoors");
+                            ev.Shooter.ShowHitMarker();
                         }
 
-                        if (targetPlayer.GetSessionVar<bool>(SessionVarType.SPAWN_PROTECT))
-                        {
-                            RLogger.Log("TASER", "REVERSED", $"{player.PlayerToString()} hit {targetPlayer.PlayerToString()} but effects were reversed because of spawn protect");
-                            targetPlayer = player;
-
-                            // return false;
-                        }
-
-                        if (targetPlayer.IsHuman)
-                        {
-                            targetPlayer.EnableEffect<CustomPlayerEffects.Ensnared>(2);
-                            targetPlayer.EnableEffect<CustomPlayerEffects.Flashed>(5);
-                            targetPlayer.EnableEffect<CustomPlayerEffects.Deafened>(10);
-                            targetPlayer.EnableEffect<CustomPlayerEffects.Blinded>(10);
-                            targetPlayer.EnableEffect<CustomPlayerEffects.Amnesia>(5);
-                            if (targetPlayer.CurrentItemIndex != -1 && !UsableItems.Contains(targetPlayer.CurrentItem.id))
-                            {
-                                Exiled.Events.Handlers.Player.OnDroppingItem(new Exiled.Events.EventArgs.DroppingItemEventArgs(targetPlayer, targetPlayer.CurrentItem));
-                                var pickup = MapPlus.Spawn(targetPlayer.CurrentItem, targetPlayer.Position, Quaternion.identity, Vector3.one);
-
-                                // targetPlayer.DropItem(targetPlayer.CurrentItem);
-                                targetPlayer.RemoveItem(targetPlayer.CurrentItem);
-                                Exiled.Events.Handlers.Player.OnItemDropped(new Exiled.Events.EventArgs.ItemDroppedEventArgs(targetPlayer, pickup));
-                                targetPlayer.CurrentItem = default;
-                            }
-
-                            RLogger.Log("TASER", "HIT", $"{player.PlayerToString()} hit {targetPlayer.PlayerToString()}");
-                            targetPlayer.Broadcast("<color=yellow>Taser</color>", 10, $"<color=yellow>You have been tased by: {player.Nickname} [{player.Role}]</color>");
-                            targetPlayer.SendConsoleMessage($"You have been tased by: {player.Nickname} [{player.Role}]", "yellow");
-                            return false;
-                        }
+                        RLogger.Log("TASER", "HIT", $"{ev.Shooter.PlayerToString()} hit door");
+                        return;
                     }
-                    else
-                    {
-                        var colliders = UnityEngine.Physics.OverlapSphere(position, 0.1f);
-                        if (colliders != null)
-                        {
-                            /*foreach (var _item in colliders)
-                            {
-                                if (!Mistaken.Systems.Misc.DoorHandler.Doors.TryGetValue(_item.gameObject, out var door) || door == null)
-                                    continue;
-                                door.ServerChangeLock(DoorLockReason.NoPower, true);
-                                Instance.CallDelayed(10, () => door.ServerChangeLock(DoorLockReason.NoPower, false), "UnlockDoors");
-                                player.ReferenceHub.weaponManager.RpcConfirmShot(true, player.ReferenceHub.weaponManager.curWeapon);
-                            }*/
-                            player.ReferenceHub.weaponManager.RpcConfirmShot(false, player.ReferenceHub.weaponManager.curWeapon);
-                            RLogger.Log("TASER", "HIT", $"{player.PlayerToString()} hit door");
-                            return false;
-                        }
-                    }
-
-                    RLogger.Log("TASER", "HIT", $"{player.PlayerToString()} didn't hit anyone");
-                    this.cooldowns[dur] = DateTime.Now.AddSeconds(PluginHandler.Instance.Config.TaserMissCooldown);
                 }
 
-                return false;
+                RLogger.Log("TASER", "HIT", $"{ev.Shooter.PlayerToString()} didn't hit anyone");
+                this.cooldowns[ev.Shooter.CurrentItem.Serial] = DateTime.Now.AddSeconds(PluginHandler.Instance.Config.TaserMissCooldown);
             }
+        }
 
-            /// <inheritdoc/>
-            public override void OnStopHolding(Player player, Inventory.SyncItemInfo item)
+        private readonly Dictionary<ushort, DateTime> cooldowns = new Dictionary<ushort, DateTime>();
+
+        private IEnumerator<float> UpdateInterface(Player player)
+        {
+            yield return Timing.WaitForSeconds(0.5f);
+            while (this.Check(player.CurrentItem))
             {
-                player.SetGUI("taser", PseudoGUIPosition.BOTTOM, null);
-            }
-
-            /// <inheritdoc/>
-            public override void OnForceclass(Player player)
-            {
-                player.SetGUI("taser", PseudoGUIPosition.BOTTOM, null);
-            }
-
-            private readonly Dictionary<int, DateTime> cooldowns = new Dictionary<int, DateTime>();
-
-            private IEnumerator<float> UpdateInterface(Player player)
-            {
-                yield return Timing.WaitForSeconds(0.5f);
-                while (player.CurrentItem.id == ItemType.GunUSP)
+                if (!this.cooldowns.TryGetValue(player.CurrentItem.Serial, out DateTime time))
                 {
-                    if (!(player.CurrentItem.durability >= 501000f && player.CurrentItem.durability <= 502000f))
-                        break;
-                    int dur = (int)this.GetInternalDurability(player.CurrentItem);
-                    if (!this.cooldowns.TryGetValue(dur, out DateTime time))
-                    {
-                        this.cooldowns.Add(dur, DateTime.Now);
-                        time = DateTime.Now;
-                    }
-
-                    var diff = ((PluginHandler.Instance.Config.TaserHitCooldown - (time - DateTime.Now).TotalSeconds) / PluginHandler.Instance.Config.TaserHitCooldown) * 100;
-                    string bar = string.Empty;
-                    for (int i = 1; i <= 20; i++)
-                    {
-                        if (i * (100 / 20) > diff)
-                            bar += "<color=red>|</color>";
-                        else
-                            bar += "|";
-                    }
-
-                    player.SetGUI("taser", PseudoGUIPosition.BOTTOM, $"Trzymasz <color=yellow>Taser</color><br><mspace=0.5em><color=yellow>[<color=green>{bar}</color>]</color></mspace>");
-                    yield return Timing.WaitForSeconds(1f);
+                    this.cooldowns.Add(player.CurrentItem.Serial, DateTime.Now);
+                    time = DateTime.Now;
                 }
 
-                player.SetGUI("taser", PseudoGUIPosition.BOTTOM, null);
+                var diff = ((PluginHandler.Instance.Config.TaserHitCooldown - (time - DateTime.Now).TotalSeconds) / PluginHandler.Instance.Config.TaserHitCooldown) * 100;
+                string bar = string.Empty;
+                for (int i = 1; i <= 20; i++)
+                {
+                    if (i * (100 / 20) > diff)
+                        bar += "<color=red>|</color>";
+                    else
+                        bar += "|";
+                }
+
+                player.SetGUI("taser", PseudoGUIPosition.BOTTOM, $"Trzymasz <color=yellow>Taser</color><br><mspace=0.5em><color=yellow>[<color=green>{bar}</color>]</color></mspace>");
+                yield return Timing.WaitForSeconds(1f);
             }
+
+            player.SetGUI("taser", PseudoGUIPosition.BOTTOM, null);
         }
     }
 }

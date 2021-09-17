@@ -24,6 +24,7 @@
     <WarningLevel>4</WarningLevel>
     <PlatformTarget>x64</PlatformTarget>
     <DocumentationFile>bin\Debug\Mistaken.Taser.xml</DocumentationFile>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -44,7 +45,7 @@
     <Reference Include="Mirror" HintPath="$(MISTAKEN_REFERENCES)\Mirror.dll" />
     <Reference Include="Assembly-CSharp-firstpass" HintPath="$(MISTAKEN_REFERENCES)\Assembly-CSharp-firstpass.dll" />
     <Reference Include="Assembly-CSharp-Publicized" HintPath="$(MISTAKEN_REFERENCES)\Assembly-CSharp-Publicized.dll" />
-    <Reference Include="Mistaken.CustomItems" HintPath="$(MISTAKEN_REFERENCES)\Mistaken.CustomItems.dll" />
+    <Reference Include="Exiled.CustomItems" HintPath="$(MISTAKEN_REFERENCES)\Exiled.CustomItems.dll" />
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
