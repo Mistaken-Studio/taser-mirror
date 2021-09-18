@@ -13,6 +13,7 @@ using Exiled.API.Features.Items;
 using Exiled.CustomItems.API.Features;
 using Exiled.CustomItems.API.Spawn;
 using InventorySystem.Items.Firearms;
+using InventorySystem.Items.Firearms.BasicMessages;
 using MEC;
 using Mistaken.API;
 using Mistaken.API.Extensions;
@@ -135,7 +136,7 @@ namespace Mistaken.Taser
                 Player targetPlayer = (RealPlayers.List.Where(x => x.NetworkIdentity.netId == ev.TargetNetId).Count() > 0) ? RealPlayers.List.First(x => x.NetworkIdentity.netId == ev.TargetNetId) : null;
                 if (targetPlayer != null)
                 {
-                    ev.Shooter.Connection.Send(new InventorySystem.Items.Firearms.BasicMessages.RequestMessage(0, InventorySystem.Items.Firearms.BasicMessages.RequestType.Hitmarker), 0);
+                    ev.Shooter.Connection.Send<RequestMessage>(new RequestMessage(0, RequestType.Hitmarker), 0);
                     if (targetPlayer.Items.Select(x => x.Type).Any(x => x == ItemType.ArmorLight || x == ItemType.ArmorCombat || x == ItemType.ArmorHeavy))
                     {
                         RLogger.Log("TASER", "BLOCKED", $"{ev.Shooter.PlayerToString()} hit {targetPlayer.PlayerToString()} but effects were blocked by an armor");
@@ -185,7 +186,7 @@ namespace Mistaken.Taser
                             return;
                         }
 
-                        ev.Shooter.Connection.Send(new InventorySystem.Items.Firearms.BasicMessages.RequestMessage(0, InventorySystem.Items.Firearms.BasicMessages.RequestType.Hitmarker), 0);
+                        ev.Shooter.Connection.Send<RequestMessage>(new RequestMessage(0, RequestType.Hitmarker), 0);
                         door.ChangeLock(DoorLockType.NoPower);
                         RLogger.Log("TASER", "HIT", $"{ev.Shooter.PlayerToString()} hit door");
                         TaserHandler.Instance.CallDelayed(10, () => door.ChangeLock(DoorLockType.NoPower), "UnlockDoors");
