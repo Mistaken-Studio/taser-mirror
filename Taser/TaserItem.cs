@@ -61,19 +61,25 @@ namespace Mistaken.Taser
         public override SpawnProperties SpawnProperties { get; set; }
 
         /// <inheritdoc/>
-        public override Modifiers Modifiers { get; set; }
+        public override Modifiers Modifiers { get; set; } = new Modifiers(0, 0, 0);
 
         /// <inheritdoc/>
         public override byte ClipSize { get; set; } = 1;
 
         /// <inheritdoc/>
-        public override float Damage { get; set; } = 0;
+        public override float Damage { get; set; } = 5;
 
         /// <inheritdoc/>
         public override Pickup Spawn(Vector3 position, Item item)
         {
             var pickup = base.Spawn(position, item);
             pickup.Scale = Size;
+            if (this.cooldowns.TryGetValue(item.Serial, out DateTime value))
+            {
+                this.cooldowns.Add(pickup.Serial, value);
+                this.cooldowns.Remove(item.Serial);
+            }
+
             return pickup;
         }
 
@@ -104,24 +110,32 @@ namespace Mistaken.Taser
         }
 
         /// <inheritdoc/>
+        protected override void ShowPickedUpMessage(Player player)
+        {
+            player.SetGUI("taserpickedupmessage", PseudoGUIPosition.MIDDLE, "Podniosłeś <color=yellow>Taser</color>", 2f);
+        }
+
+        /// <inheritdoc/>
         protected override void OnShooting(Exiled.Events.EventArgs.ShootingEventArgs ev)
         {
             if (!this.cooldowns.TryGetValue(ev.Shooter.CurrentItem.Serial, out DateTime time))
                 this.cooldowns.Add(ev.Shooter.CurrentItem.Serial, DateTime.Now);
             if (DateTime.Now < time)
             {
-                ev.Shooter.SetGUI("taserAmmo", PseudoGUIPosition.TOP, "You have <color=yellow>no ammo</color>", 3);
+                ev.Shooter.SetGUI("taserammo", PseudoGUIPosition.TOP, "Nie masz <color=yellow>amunicji</color>", 2);
                 ev.IsAllowed = false;
+                return;
             }
             else
             {
+                (ev.Shooter.CurrentItem as Exiled.API.Features.Items.Firearm).Ammo += 1;
                 if (ev.Shooter.GetEffectActive<CustomPlayerEffects.Invisible>())
                     ev.Shooter.DisableEffect<CustomPlayerEffects.Invisible>();
                 this.cooldowns[ev.Shooter.CurrentItem.Serial] = DateTime.Now.AddSeconds(PluginHandler.Instance.Config.TaserHitCooldown);
                 Player targetPlayer = (RealPlayers.List.Where(x => x.NetworkIdentity.netId == ev.TargetNetId).Count() > 0) ? RealPlayers.List.First(x => x.NetworkIdentity.netId == ev.TargetNetId) : null;
                 if (targetPlayer != null)
                 {
-                    ev.Shooter.ShowHitMarker();
+                    ev.Shooter.Connection.Send(new InventorySystem.Items.Firearms.BasicMessages.RequestMessage(0, InventorySystem.Items.Firearms.BasicMessages.RequestType.Hitmarker), 0);
                     if (targetPlayer.Items.Select(x => x.Type).Any(x => x == ItemType.ArmorLight || x == ItemType.ArmorCombat || x == ItemType.ArmorHeavy))
                     {
                         RLogger.Log("TASER", "BLOCKED", $"{ev.Shooter.PlayerToString()} hit {targetPlayer.PlayerToString()} but effects were blocked by an armor");
@@ -146,6 +160,7 @@ namespace Mistaken.Taser
                         {
                             Exiled.Events.Handlers.Player.OnDroppingItem(new Exiled.Events.EventArgs.DroppingItemEventArgs(targetPlayer, targetPlayer.CurrentItem.Base));
                             var pickup = MapPlus.Spawn(targetPlayer.CurrentItem.Type, targetPlayer.Position, Quaternion.identity, Vector3.one);
+                            pickup.ItemSerial = targetPlayer.CurrentItem.Serial;
 
                             targetPlayer.DropItem(targetPlayer.CurrentItem);
                             targetPlayer.RemoveItem(targetPlayer.CurrentItem);
@@ -160,25 +175,23 @@ namespace Mistaken.Taser
                 }
                 else
                 {
-                    var colliders = UnityEngine.Physics.OverlapSphere(ev.ShotPosition, 0.1f);
-                    if (colliders != null)
+                    UnityEngine.Physics.Raycast(ev.Shooter.Position, ev.Shooter.CameraTransform.forward, out RaycastHit hitinfo);
+                    if (hitinfo.collider != null)
                     {
-                        foreach (var item in colliders)
+                        if (!TaserHandler.Doors.TryGetValue(hitinfo.collider.gameObject, out var door) || door == null)
                         {
-                            if (!TaserHandler.Doors.TryGetValue(item.gameObject, out var door) || door == null)
-                                continue;
-                            door.ChangeLock(DoorLockType.NoPower);
-                            TaserHandler.Instance.CallDelayed(10, () => door.ChangeLock(DoorLockType.NoPower), "UnlockDoors");
-                            ev.Shooter.ShowHitMarker();
+                            RLogger.Log("TASER", "HIT", $"{ev.Shooter.PlayerToString()} didn't hit anyone");
+                            this.cooldowns[ev.Shooter.CurrentItem.Serial] = DateTime.Now.AddSeconds(PluginHandler.Instance.Config.TaserMissCooldown);
+                            return;
                         }
 
+                        ev.Shooter.Connection.Send(new InventorySystem.Items.Firearms.BasicMessages.RequestMessage(0, InventorySystem.Items.Firearms.BasicMessages.RequestType.Hitmarker), 0);
+                        door.ChangeLock(DoorLockType.NoPower);
                         RLogger.Log("TASER", "HIT", $"{ev.Shooter.PlayerToString()} hit door");
+                        TaserHandler.Instance.CallDelayed(10, () => door.ChangeLock(DoorLockType.NoPower), "UnlockDoors");
                         return;
                     }
                 }
-
-                RLogger.Log("TASER", "HIT", $"{ev.Shooter.PlayerToString()} didn't hit anyone");
-                this.cooldowns[ev.Shooter.CurrentItem.Serial] = DateTime.Now.AddSeconds(PluginHandler.Instance.Config.TaserMissCooldown);
             }
         }
 
@@ -186,7 +199,7 @@ namespace Mistaken.Taser
 
         private IEnumerator<float> UpdateInterface(Player player)
         {
-            yield return Timing.WaitForSeconds(0.5f);
+            yield return Timing.WaitForSeconds(0.1f);
             while (this.Check(player.CurrentItem))
             {
                 if (!this.cooldowns.TryGetValue(player.CurrentItem.Serial, out DateTime time))
@@ -205,11 +218,11 @@ namespace Mistaken.Taser
                         bar += "|";
                 }
 
-                player.SetGUI("taser", PseudoGUIPosition.BOTTOM, $"Trzymasz <color=yellow>Taser</color><br><mspace=0.5em><color=yellow>[<color=green>{bar}</color>]</color></mspace>");
+                player.SetGUI("taserholding", PseudoGUIPosition.BOTTOM, $"Trzymasz <color=yellow>Taser</color><br><mspace=0.5em><color=yellow>[<color=green>{bar}</color>]</color></mspace>");
                 yield return Timing.WaitForSeconds(1f);
             }
 
-            player.SetGUI("taser", PseudoGUIPosition.BOTTOM, null);
+            player.SetGUI("taserholding", PseudoGUIPosition.BOTTOM, null);
         }
     }
 }

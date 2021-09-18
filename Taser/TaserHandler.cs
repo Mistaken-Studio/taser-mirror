@@ -69,7 +69,10 @@ namespace Mistaken.Taser
         {
             foreach (var door in Map.Doors)
             {
-                Doors[door.Base.gameObject] = door;
+                foreach (var child in door.Base.GetComponentsInChildren<BoxCollider>())
+                {
+                    Doors[child.gameObject] = door;
+                }
             }
 
             var structureLockers = UnityEngine.Object.FindObjectsOfType<MapGeneration.Distributors.SpawnableStructure>().Where(x => x.StructureType == MapGeneration.Distributors.StructureType.LargeGunLocker);
@@ -81,6 +84,7 @@ namespace Mistaken.Taser
                 var chamber = locker.Chambers[UnityEngine.Random.Range(0, locker.Chambers.Length)];
                 CustomWeapon.TrySpawn(1, chamber._spawnpoint.position + (Vector3.up / 10), out Pickup pickup);
                 chamber._content.Add(pickup.Base);
+                this.Log.Debug($"Spawned Taser at: {pickup.Position}", true);
                 toSpawn--;
             }
         }
