@@ -130,8 +130,6 @@ namespace Mistaken.Taser
             else
             {
                 (ev.Shooter.CurrentItem as Exiled.API.Features.Items.Firearm).Ammo += 1;
-                if (ev.Shooter.GetEffectActive<CustomPlayerEffects.Invisible>())
-                    ev.Shooter.DisableEffect<CustomPlayerEffects.Invisible>();
                 this.cooldowns[ev.Shooter.CurrentItem.Serial] = DateTime.Now.AddSeconds(PluginHandler.Instance.Config.TaserHitCooldown);
                 Player targetPlayer = (RealPlayers.List.Where(x => x.NetworkIdentity.netId == ev.TargetNetId).Count() > 0) ? RealPlayers.List.First(x => x.NetworkIdentity.netId == ev.TargetNetId) : null;
                 if (targetPlayer != null)
