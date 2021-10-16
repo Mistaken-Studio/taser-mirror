@@ -10,8 +10,8 @@ using System.Linq;
 using Exiled.API.Enums;
 using Exiled.API.Features;
 using Exiled.API.Features.Items;
+using Exiled.API.Features.Spawn;
 using Exiled.CustomItems.API.Features;
-using Exiled.CustomItems.API.Spawn;
 using InventorySystem.Items.Firearms;
 using InventorySystem.Items.Firearms.BasicMessages;
 using MEC;
@@ -134,7 +134,7 @@ namespace Mistaken.Taser
                 Player targetPlayer = (RealPlayers.List.Where(x => x.NetworkIdentity.netId == ev.TargetNetId).Count() > 0) ? RealPlayers.List.First(x => x.NetworkIdentity.netId == ev.TargetNetId) : null;
                 if (targetPlayer != null)
                 {
-                    ev.Shooter.Connection.Send<RequestMessage>(new RequestMessage(0, RequestType.Hitmarker), 0);
+                    Hitmarker.SendHitmarker(ev.Shooter.Connection, 20);
                     if (targetPlayer.Items.Select(x => x.Type).Any(x => x == ItemType.ArmorLight || x == ItemType.ArmorCombat || x == ItemType.ArmorHeavy))
                     {
                         RLogger.Log("TASER", "BLOCKED", $"{ev.Shooter.PlayerToString()} hit {targetPlayer.PlayerToString()} but effects were blocked by an armor");
@@ -157,7 +157,7 @@ namespace Mistaken.Taser
                         targetPlayer.EnableEffect<CustomPlayerEffects.Amnesia>(5);
                         if (targetPlayer.CurrentItem != null && !TaserHandler.UsableItems.Contains(targetPlayer.CurrentItem.Type))
                         {
-                            Exiled.Events.Handlers.Player.OnDroppingItem(new Exiled.Events.EventArgs.DroppingItemEventArgs(targetPlayer, targetPlayer.CurrentItem.Base));
+                            Exiled.Events.Handlers.Player.OnDroppingItem(new Exiled.Events.EventArgs.DroppingItemEventArgs(targetPlayer, targetPlayer.CurrentItem.Base, false));
                             var pickup = MapPlus.Spawn(targetPlayer.CurrentItem.Type, targetPlayer.Position, Quaternion.identity, Vector3.one);
                             pickup.ItemSerial = targetPlayer.CurrentItem.Serial;
 
@@ -184,7 +184,7 @@ namespace Mistaken.Taser
                             return;
                         }
 
-                        ev.Shooter.Connection.Send<RequestMessage>(new RequestMessage(0, RequestType.Hitmarker), 0);
+                        Hitmarker.SendHitmarker(ev.Shooter.Connection, 20);
                         door.ChangeLock(DoorLockType.NoPower);
                         RLogger.Log("TASER", "HIT", $"{ev.Shooter.PlayerToString()} hit door");
                         TaserHandler.Instance.CallDelayed(10, () => door.ChangeLock(DoorLockType.NoPower), "UnlockDoors");

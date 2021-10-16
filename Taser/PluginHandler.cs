@@ -26,7 +26,7 @@ namespace Mistaken.Taser
         public override PluginPriority Priority => PluginPriority.Default;
 
         /// <inheritdoc/>
-        public override Version RequiredExiledVersion => new Version(3, 0, 0, 84);
+        public override Version RequiredExiledVersion => new Version(3, 0, 4);
 
         /// <inheritdoc/>
         public override void OnEnabled()
